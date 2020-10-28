@@ -5,7 +5,7 @@ This is a proof-of-concept block store for IPLD. It's designed to flush out some
 The technique is relatively simple:
 
 * Block value data is stored in a rolling append-only log.
-* The log/offset/length of each block is stored in a shared key-value store keyed by CID.
+* The log/offset/length of each block is stored in a sharded key-value store keyed by CID.
   * We just use the last 4 bytes (Uint32) of the hash digest for every CID and shard over
     multiple independent on-disc key-value stores.
   * The POC is sharding into 256 leveldb stores.
