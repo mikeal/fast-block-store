@@ -1,10 +1,12 @@
 import leveldown from 'leveldown'
 import { load } from './load-car.js'
-import { readdirSync, createWriteStream, statSync, openSync, read } from 'fs'
+import { readdirSync, statSync, openSync, read, write, close } from 'fs'
 import path from 'path'
 import mkdirp from 'mkdirp'
 import { promisify } from 'util'
 import { deepStrictEqual as same } from 'assert'
+
+const closeFd = promisify(close)
 
 const maxInt = 0xFFFFFFFF
 const maxLogSize = 1024 * 1000
@@ -25,6 +27,8 @@ const bucket = (cid, size=256) => {
   const num = view.getUint32(0)
   return Math.floor((num / maxInt) * size)
 }
+
+let writes = 0
 
 class FastStore {
   constructor (directory) {
@@ -54,7 +58,7 @@ class FastStore {
   _createLogStream (int) {
     const p = this._logFile(int)
     const fd = openSync(p, 'a+')
-    return createWriteStream(p, { flags: 'a+', fd })
+    return fd
   }
 
   async createLog (int) {
@@ -74,14 +78,14 @@ class FastStore {
 
   async writeBytes (bytes) {
     const log = await this.currentLog
-    const [, stream] = log
+    const [, fd] = log
     return new Promise((resolve, reject) => {
       const start = log[2]
       log[2] += bytes.byteLength
       if (log[2] > maxLogSize) {
         this.currentLog = this.createLog(log[0] + 1)
       }
-      stream.write(bytes, err => {
+      write(fd, bytes, 0, bytes.byteLength, start, err => {
         if (err) return reject(err)
         resolve([log[0], start, bytes.byteLength])
       })
@@ -90,17 +94,19 @@ class FastStore {
 
   async getLevel (int) {
     if (this.levels.has(int)) return this.levels.get(int)
-    const db = leveldown(path.join(this.levelDir, int.toString()))
-    const open = promisify(db.open.bind(db))
-    await open({ createIfMissing: true })
-    // handle concurrency edge case
-    if (this.levels.has(int)) return this.levels.get(int)
-    this.levels.set(int, {
-      put: promisify(db.put.bind(db)),
-      close: promisify(db.close.bind(db)),
-      get: promisify(db.get.bind(db))
+    const promise = new Promise(async resolve => {
+      const db = leveldown(path.join(this.levelDir, int.toString()))
+      const open = promisify(db.open.bind(db))
+      await open({ createIfMissing: true })
+      this.levels.set(int, {
+        put: promisify(db.put.bind(db)),
+        close: promisify(db.close.bind(db)),
+        get: promisify(db.get.bind(db))
+      })
+      resolve(this.levels.get(int))
     })
-    return this.levels.get(int)
+    this.levels.set(int, promise)
+    return promise
   }
 
   async put ({ cid, bytes }) {
@@ -108,6 +114,7 @@ class FastStore {
     const location = await this.writeBytes(bytes)
     const level = await this.getLevel(bucket(cid))
     await level.put(cid.toString(), JSON.stringify(location))
+    writes += 1
     return true
   }
 
@@ -126,32 +133,54 @@ class FastStore {
     const level = await this.getLevel(bucket(cid))
     const string = await level.get(cid.toString())
     const [ log, offset, length ] = JSON.parse(string)
-    const [, stream] = await this.getLog(log)
-    const bytes = await readOffset(stream.fd, offset, length)
+    const [, fd] = await this.getLog(log)
+    const bytes = await readOffset(fd, offset, length)
     return bytes
   }
 
   async close () {
     const levs = [...this.levels.values()].map(l => l.close())
-    const streams = [...this.logs.values()].map(([,s]) => promisify(s.close.bind(s))())
+    const streams = [...this.logs.values()].map(([,fd]) => closeFd(fd))
     return Promise.all([...levs, ...streams])
   }
+}
+
+const limiter = limit => {
+  const pending = new Set()
+  const handler = promise => {
+    promise.then(() => pending.delete(promise))
+    pending.add(promise)
+    if (pending.size > limit) {
+      return Promise.race([...pending])
+    }
+  }
+  handler.finish = () => Promise.all([...pending])
+  return handler
 }
 
 const run = async () => {
   const car = await load(process.argv[2])
   const store = new FastStore('db')
-  let writes = 0
   const interval = setInterval(() => {
     console.log(writes, 'writes in the last minute')
     writes = 0
   }, 1000 * 60)
+
+  const limit = limiter(10 * 1000)
+
   for await (const { bytes, cid } of car.all()) {
-    await store.put({ bytes, cid })
-    // const _bytes = await store.get(cid)
-    // same(bytes, _bytes)
-    writes += 1
+    await limit(store.put({ bytes, cid }))
   }
+
+  await limit.finish()
+
+  /*
+  for await (const { bytes, cid } of car.all()) {
+    const _bytes = await store.get(cid)
+    same(bytes, _bytes)
+  }
+  */
+
   await store.close()
   clearInterval(interval)
 }
