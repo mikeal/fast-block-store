@@ -43,7 +43,7 @@ Specific to this implementation:
 
 * The log/offset/length of each block is stored in a sharded key-value store keyed by CID.
   * We just use the last 4 bytes (Uint32) of the hash digest for every CID and shard over
-    multiple independent on-disc key-value stores. So the shard id is just `Floor( ( Uint32(DigestTail) / 0xFFFFFFFF ) * TotalShards )
+    multiple independent on-disc key-value stores. So the shard id is just `Floor( ( Uint32(DigestTail) / 0xFFFFFFFF ) * TotalShards )`
   * This POC is sharding into 256 leveldb stores.
     * Parsing a CAR file of the Filecoin chain the initial write speed is ~1M block writes per minute (AWS ec2 instance writing to EBS).
     * Write speeds remained stable even after all the chain data had been loaded. In this test the speed
