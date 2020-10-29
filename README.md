@@ -1,6 +1,6 @@
 # fast-block-store
 
-Storing data by a hashed based key (content address) has some
+Storing data by a hash based key (content address) has some
 unique properties that allow for highly performance storage
 systems to be built.
 
