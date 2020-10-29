@@ -22,6 +22,10 @@ Write pipeline:
     * Note: we don't specific whether this is a CID, a multihash, or hash digest.
       This is left up to the consumer, since different use cases may have differing
       key requirements.
+    * This means you should never store `identity` multihashes because they will not
+      be properly balanced. But this shouldn't be a problem in practice, the value data
+      is already in the key so there's no need to ever store an `identity` multihash
+      (typically used for inline CID's) on-disc.
   * `Value` is bytes data that matches the hash used in the key
 * `Value` data is written to a rolling append-only file log.
   * The `Index` of this value is [ `LogNumber`, `Position`, `Length` ]
