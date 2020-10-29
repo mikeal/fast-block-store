@@ -18,7 +18,7 @@ This project is a proof-of-concept block store.
 Write pipeline:
 
 * `Block` (`Key`/`Value` pair) write
-  * Key is a byte value that must end in a hash digest of at least 4 bytes.
+  * `Key` is a byte value that must end in a hash digest of at least 4 bytes.
     * Note: we don't specific whether this is a CID, a multihash, or hash digest.
       This is left up to the consumer, since different use cases may have differing
       key requirements.
