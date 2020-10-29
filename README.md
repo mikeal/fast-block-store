@@ -25,6 +25,10 @@ Write pipeline:
   * `Value` is bytes data that matches the hash used in the key
 * `Value` data is written to a rolling append-only file log.
   * The `Index` of this value is [ `LogNumber`, `Position`, `Length` ]
+  * Since values never change are are rarely (if ever) deleted it's much faster
+    to write them to an append-only file log.
+  * Keeping potentialy large values out of the key-value store makes its own rebalancing
+    and compaction much more efficient.
 * `Key`/`Index` is written to a sharded key-value store.
   * Any key-value store will work.
     We can run additional tests to find the ideal on-disc storage structure.
